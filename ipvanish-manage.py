@@ -34,6 +34,10 @@ class CannotFindOvpnException(Exception):
     pass
 
 
+class CannotConfigureFirewallException(Exception):
+    pass
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True,
@@ -51,10 +55,17 @@ def parse_args():
                         help='Logfile Default /var/log/ip-vanish.log')
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='Use for more verbose output')
-    parser.add_argument('-p', '--persist', default=False,
-                        help='If the script stops it starts it again DEFAULT False')
     return parser.parse_args()
 
+
+def configure_firewall(iptables_rules, vpn_server):
+    """
+    :iptables_rules (str): Name of the file that contains iptables rules
+    :vpn_server (str): Remote vpn server ip address
+    :returns (int): Exit code 0 for success
+    """
+    log.debug('Configuring iptables to allow only VPN connections')
+    return subprocess.call(['sh', iptables_rules, vpn_server])
 
 def get_external_ip():
     """
@@ -114,15 +125,6 @@ def get_ovpn_conf(config_path, country=None):
                 return fname, ip
 
     raise CannotFindOvpnException('Cannot get ip from file')
-
-
-def restart_program():
-    """Restarts the current program.
-    Note: this function does not return. Any cleanup action (like
-    saving data) must be done before calling this function."""
-
-    python = sys.executable
-    os.execl(python, python, * sys.argv)
 
 
 def vpn_running(openvpn_cmd, my_ip, duration):
@@ -188,41 +190,46 @@ def main():
     """
     args = parse_args()
     log.info('Starting ipvanish-manager')
-    # first kill openvpn if it runs
-    p = subprocess.Popen(['killall', 'openvpn'], stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE)
-    out, err = p.communicate()
-    if p.returncode == 0:
-        log.debug('Killed running openvpn process')
-    else:
-        log.debug(err.strip())
+    while True:
+        try:
+            # first kill openvpn if it runs
+            p = subprocess.Popen(['killall', 'openvpn'], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+            out, err = p.communicate()
+            if p.returncode == 0:
+                log.debug('Killed running openvpn process')
+            else:
+                log.debug(err.strip())
 
-    try:
-        isp_ip = get_external_ip()
-    except CannotGetIpException:
-        log.exception(str(e))
-        raise
+            try:
+                isp_ip = get_external_ip()
+            except CannotGetIpException:
+                log.exception(str(e))
+                raise
 
-    log.info('Isp ip is: %s', isp_ip)
+            log.info('Isp ip is: %s', isp_ip)
 
-    try:
-        fname, host = get_ovpn_conf(config_path=args.config,
-                                    country=args.country)
-    except Exception as e:
-        log.exception(str(e))
+            try:
+                fname, vpn_ip = get_ovpn_conf(config_path=args.config,
+                                            country=args.country)
+            except Exception as e:
+                log.exception(str(e))
 
-    log.info('Ovpn: %s Remote Ip: %s', fname, host)
+            log.info('Ovpn: %s Remote Ip: %s', fname, vpn_ip)
 
-    # Runs openvpn and returns info if it stops running
-    # Selects a new random server every 2 days
-    openvpn_cmd = ['openvpn', '--config', fname, '--auth-user-pass',
-                   args.auth_user_pass, '--ca', args.ca]
-    log.debug('command:\n%s', ' '.join(openvpn_cmd))
-    start, end, vpn_ip, err = vpn_running(openvpn_cmd, isp_ip, 86400)
+            exitcode = configure_firewall(args.firewall_script, vpn_ip)
+            if exitcode != 0:
+                raise CannotConfigureFirewallException('Iptables configuration failed')
 
-    # never returns
-    if args.persist:
-        restat_program()
+            # Runs openvpn and returns info if it stops running
+            openvpn_cmd = ['openvpn', '--config', fname, '--auth-user-pass',
+                           args.auth_user_pass, '--ca', args.ca]
+            log.debug('command:\n%s', ' '.join(openvpn_cmd))
+            start, end, vpn_ip, err = vpn_running(openvpn_cmd, isp_ip, 86400)
+            self.log.warning('Vpn Connection stopped after %g seconds: %s msg: %s',
+                              end - start, err)
+        except Exception:
+            log.exception('Exception happened')
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
