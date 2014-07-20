@@ -51,6 +51,8 @@ def parse_args():
                         help='Picks a random server from the specified'\
                         ' country selected. If not specified just selects'\
                         ' a random server')
+    parser.add_argument('--firewall_script', default=None,
+                        help='Add here the firewall_script to use')
     parser.add_argument('-l', '--logfile', default='/var/log/ip-vanish.log',
                         help='Logfile Default /var/log/ip-vanish.log')
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
@@ -217,9 +219,10 @@ def main():
 
             log.info('Ovpn: %s Remote Ip: %s', fname, vpn_ip)
 
-            exitcode = configure_firewall(args.firewall_script, vpn_ip)
-            if exitcode != 0:
-                raise CannotConfigureFirewallException('Iptables configuration failed')
+            if args.firewall_script:
+                exitcode = configure_firewall(args.firewall_script, vpn_ip)
+                if exitcode != 0:
+                    raise CannotConfigureFirewallException('Iptables configuration failed')
 
             # Runs openvpn and returns info if it stops running
             openvpn_cmd = ['openvpn', '--config', fname, '--auth-user-pass',
