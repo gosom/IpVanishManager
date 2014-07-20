@@ -29,7 +29,7 @@ iptables -A OUTPUT -s $1 -j ACCEPT
 
 # local
 iptables -A OUTPUT -d 10.0.0.0/8 -j ACCEPT
-iptables -A OUTPUT -d 172.16.0.0./12 -j ACCEPT
+iptables -A OUTPUT -d 172.16.0.0/12 -j ACCEPT
 iptables -A OUTPUT -d 192.168.0.0/16 -j ACCEPT
 
 # forbid other
