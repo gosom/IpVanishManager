@@ -1,5 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""
+Inspired from https://code.google.com/p/hma-manager/
+
+Starts a vpn connection and periodically checks that it is up.
+Moreover it configures the firewall (iptables) and blocks all traffic
+that is not through vpn.
+
+Usage:
+    ./ipvanish-manager.py -h
+"""
 import argparse
 import logging
 import subprocess
@@ -12,16 +22,7 @@ import os.path
 import random
 import socket
 
-"""
-Inspired from https://code.google.com/p/hma-manager/
 
-Starts a vpn connection and periodically checks that it is up.
-
-In the next version it will block all traffic except the one to the
-vpn server with iptables. This will make sure that we do not have
-any leaks without VPN.
-
-"""
 
 log = logging.getLogger('ipvanish-manager')
 
@@ -140,7 +141,7 @@ def vpn_running(openvpn_cmd, my_ip, duration):
     :cur_version: string
     :duration: integer
 
-    Lreturn: Returns the start and end times as well as vpn IP address
+    :return: Returns the start and end times as well as vpn IP address
              and disconnect reason
     '''
     prog = subprocess.Popen(openvpn_cmd, stdout=subprocess.PIPE)
@@ -191,7 +192,14 @@ def main():
     3. Monitors the connection and restarts if needed
     """
     args = parse_args()
-    log.info('Starting ipvanish-manager')
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG if args.verbose else logging.INFO)
+
+    handler = logging.handlers.TimedRotatingFileHandler(
+              args.logfile, when='W0', backupCount=4)
+    logger.addHandler(handler)
+
+    logger.info('Starting ipvanish-manager')
     while True:
         try:
             # first kill openvpn if it runs
@@ -199,25 +207,25 @@ def main():
                                 stderr=subprocess.PIPE)
             out, err = p.communicate()
             if p.returncode == 0:
-                log.debug('Killed running openvpn process')
+                logger.debug('Killed running openvpn process')
             else:
-                log.debug(err.strip())
+                logger.debug(err.strip())
 
             try:
                 isp_ip = get_external_ip()
             except CannotGetIpException:
-                log.exception(str(e))
+                logger.exception(str(e))
                 raise
 
-            log.info('Isp ip is: %s', isp_ip)
+            logger.info('Isp ip is: %s', isp_ip)
 
             try:
                 fname, vpn_ip = get_ovpn_conf(config_path=args.config,
                                             country=args.country)
             except Exception as e:
-                log.exception(str(e))
+                logger.exception(str(e))
 
-            log.info('Ovpn: %s Remote Ip: %s', fname, vpn_ip)
+            logger.info('Ovpn: %s Remote Ip: %s', fname, vpn_ip)
 
             if args.firewall_script:
                 exitcode = configure_firewall(args.firewall_script, vpn_ip)
@@ -227,13 +235,12 @@ def main():
             # Runs openvpn and returns info if it stops running
             openvpn_cmd = ['openvpn', '--config', fname, '--auth-user-pass',
                            args.auth_user_pass, '--ca', args.ca]
-            log.debug('command:\n%s', ' '.join(openvpn_cmd))
+            logger.debug('command:\n%s', ' '.join(openvpn_cmd))
             start, end, vpn_ip, err = vpn_running(openvpn_cmd, isp_ip, 86400)
-            self.log.warning('Vpn Connection stopped after %g seconds: %s msg: %s',
+            logger.warning('Vpn Connection stopped after %g seconds: %s msg: %s',
                               end - start, err)
         except Exception:
-            log.exception('Exception happened')
+            logger.exception('Exception happened')
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
     main()
