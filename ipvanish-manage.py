@@ -157,6 +157,7 @@ def vpn_running(openvpn_cmd, my_ip, duration):
             vpn_ip = get_external_ip()
         except CannotGetIpException:
             err = 'Unable to get external ip'
+            vpn_ip = None
             end = time.time()
             prog.kill()
             break
@@ -196,8 +197,10 @@ def main():
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG if args.verbose else logging.INFO)
 
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler = logging.handlers.TimedRotatingFileHandler(
               args.logfile, when='W0', backupCount=4)
+    handler.setFormatter(formatter)
     logger.addHandler(handler)
 
     logger.info('Starting ipvanish-manager')
@@ -220,16 +223,13 @@ def main():
 
             logger.info('Isp ip is: %s', isp_ip)
 
-            try:
-                fname, vpn_ip = get_ovpn_conf(config_path=args.config,
-                                            country=args.country)
-            except Exception as e:
-                logger.exception(str(e))
+            fname, ip = get_ovpn_conf(config_path=args.config,
+                                      country=args.country)
 
-            logger.info('Ovpn: %s Remote Ip: %s', fname, vpn_ip)
+            logger.info('Ovpn: %s Remote Ip: %s', fname, ip)
 
             if args.firewall_script:
-                exitcode = configure_firewall(args.firewall_script, vpn_ip)
+                exitcode = configure_firewall(args.firewall_script, ip)
                 if exitcode != 0:
                     raise CannotConfigureFirewallException('Iptables configuration failed')
 
@@ -238,6 +238,8 @@ def main():
                            args.auth_user_pass, '--ca', args.ca]
             logger.debug('command:\n%s', ' '.join(openvpn_cmd))
             start, end, vpn_ip, err = vpn_running(openvpn_cmd, isp_ip, 86400)
+            if not vpn_ip:
+                raise Exception('Cannot connect')
             logger.warning('Vpn Connection stopped after %g seconds: %s msg: %s',
                               end - start, err)
         except Exception:
