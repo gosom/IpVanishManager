@@ -86,7 +86,7 @@ def get_external_ip():
             content = sock.read().decode('ISO-8859-1')
             m = ip_pattern.search(content)
             external_ip = m.group(0)
-        except Exception:
+        except Exception as e:
             log.exception('Exception fetching ip')
             if time.time() - start_time > 30:
                 raise CannotGetIpException('Cannot fetch ip on time!')
