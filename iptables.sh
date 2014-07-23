@@ -25,7 +25,7 @@ iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 
 # allow traffic to vpn
-iptables -A OUTPUT -s $1 -j ACCEPT
+iptables -A OUTPUT -d $1 -j ACCEPT
 
 # local
 iptables -A OUTPUT -d 10.0.0.0/8 -j ACCEPT
